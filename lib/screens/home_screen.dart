@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../services/match_repository.dart';
 import '../theme.dart';
 import 'scoreboard_screen.dart';
+import 'match_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -119,40 +120,54 @@ class _MatchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE3E8E6)),
-      ),
-      child: Row(
-        children: [
-          _ResultBadge(didWin: match.didWin),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  scoreLine(match),
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.ink,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  DateFormat('EEE d MMM').format(match.date),
-                  style: const TextStyle(color: AppColors.inkSoft),
-                ),
-              ],
-            ),
+    return InkWell(
+      // ← NEW: wrapper
+      onTap: () {
+        // ← NEW: what happens on tap
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MatchDetailScreen(
+              match: match,
+            ), // hand this tile's match to the new screen
           ),
-        ],
-      ),
-    );
+        );
+      }, // ← NEW: end of onTap
+      child: Container(
+        // ← your original Container, now the InkWell's child
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE3E8E6)),
+        ),
+        child: Row(
+          children: [
+            _ResultBadge(didWin: match.didWin),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    scoreLine(match),
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('EEE d MMM').format(match.date),
+                    style: const TextStyle(color: AppColors.inkSoft),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ), // ← end of Container (the child)
+    ); // ← end of InkWell
   }
 }
 
