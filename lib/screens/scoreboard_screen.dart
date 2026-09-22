@@ -1,8 +1,9 @@
 // lib/screens/scoreboard_screen.dart
 //
-// v1 match logger: enter the games in each set, the date, optional notes, save.
-// (A live point-by-point scoreboard with serve rotation is a later upgrade —
-// this already fills the full data model.)
+// v1 match logger with tournament scoring rules.
+// Enter the games in each set, the date, optional notes, save.
+// On save we ask PadelScoring.validateMatch(...) whether it's a legal
+// best-of-3 before storing anything — the rules live in that file, not here.
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +12,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
 import '../services/match_repository.dart';
+import '../services/padel_scoring.dart';
 import '../theme.dart';
 
 class ScoreboardScreen extends StatefulWidget {
@@ -21,7 +23,7 @@ class ScoreboardScreen extends StatefulWidget {
 }
 
 class _ScoreboardScreenState extends State<ScoreboardScreen> {
-  // Each entry is one set: [yourGames, theirGames].
+  // Each entry is one set: [yourGames, theirGames]. Best of 3 → up to 3 rows.
   final List<List<int>> _sets = [
     [0, 0],
   ];
@@ -34,7 +36,11 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     super.dispose();
   }
 
-  void _addSet() => setState(() => _sets.add([0, 0]));
+  // The 3rd set is the deciding super tiebreak, so we cap at 3 rows.
+  void _addSet() => setState(() {
+    if (_sets.length < 3) _sets.add([0, 0]);
+  });
+
   void _removeSet(int i) => setState(() {
     if (_sets.length > 1) _sets.removeAt(i);
   });
@@ -57,15 +63,25 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
   }
 
   void _save() {
+    final sets = _sets
+        .map((s) => PadelSet(yourGames: s[0], theirGames: s[1]))
+        .toList();
+
+    // Ask the rulebook. null == valid; otherwise it hands back the reason.
+    final error = PadelScoring.validateMatch(sets);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppColors.loss),
+      );
+      return; // stop — nothing is saved
+    }
+
     final match = Match(
       id: const Uuid().v4(),
       date: _date,
-      sets: _sets
-          .map((s) => PadelSet(yourGames: s[0], theirGames: s[1]))
-          .toList(),
+      sets: sets,
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
     );
-    // read() (not watch) — we're triggering an action, not rebuilding on change.
     context.read<MatchRepository>().addMatch(match);
     Navigator.of(context).pop();
   }
@@ -105,6 +121,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
           for (int i = 0; i < _sets.length; i++) ...[
             _SetRow(
               index: i,
+              isDecider: i == 2, // 3rd row = super tiebreak to 10
               you: _sets[i][0],
               them: _sets[i][1],
               onBump: _bump,
@@ -113,11 +130,15 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
             const SizedBox(height: 12),
           ],
 
-          TextButton.icon(
-            onPressed: _addSet,
-            icon: const Icon(Icons.add),
-            label: const Text('Add set'),
-          ),
+          // Only offer "add set" while there's room (best of 3).
+          if (_sets.length < 3)
+            TextButton.icon(
+              onPressed: _addSet,
+              icon: const Icon(Icons.add),
+              label: Text(
+                _sets.length == 2 ? 'Add deciding tiebreak' : 'Add set',
+              ),
+            ),
 
           const SizedBox(height: 16),
           TextField(
@@ -165,6 +186,7 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
 class _SetRow extends StatelessWidget {
   const _SetRow({
     required this.index,
+    required this.isDecider,
     required this.you,
     required this.them,
     required this.onBump,
@@ -172,6 +194,7 @@ class _SetRow extends StatelessWidget {
   });
 
   final int index;
+  final bool isDecider;
   final int you;
   final int them;
   final void Function(int setIndex, int side, int delta) onBump;
@@ -179,6 +202,7 @@ class _SetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = isDecider ? 'Tiebreak' : 'Set ${index + 1}';
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -186,38 +210,55 @@ class _SetRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE3E8E6)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 52,
-            child: Text(
-              'Set ${index + 1}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                color: AppColors.ink,
+          Row(
+            children: [
+              SizedBox(
+                width: 74,
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
               ),
-            ),
+              Expanded(
+                child: _Counter(
+                  label: 'You',
+                  value: you,
+                  onDelta: (d) => onBump(index, 0, d),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _Counter(
+                  label: 'Them',
+                  value: them,
+                  onDelta: (d) => onBump(index, 1, d),
+                ),
+              ),
+              if (onRemove != null)
+                IconButton(
+                  onPressed: onRemove,
+                  icon: const Icon(
+                    Icons.close,
+                    size: 18,
+                    color: AppColors.inkSoft,
+                  ),
+                  tooltip: 'Remove set',
+                ),
+            ],
           ),
-          Expanded(
-            child: _Counter(
-              label: 'You',
-              value: you,
-              onDelta: (d) => onBump(index, 0, d),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _Counter(
-              label: 'Them',
-              value: them,
-              onDelta: (d) => onBump(index, 1, d),
-            ),
-          ),
-          if (onRemove != null)
-            IconButton(
-              onPressed: onRemove,
-              icon: const Icon(Icons.close, size: 18, color: AppColors.inkSoft),
-              tooltip: 'Remove set',
+          if (isDecider)
+            const Padding(
+              padding: EdgeInsets.only(top: 6, left: 2),
+              child: Text(
+                'Deciding super tiebreak — first to 10, win by 2',
+                style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+              ),
             ),
         ],
       ),
