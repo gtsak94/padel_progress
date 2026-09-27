@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'theme.dart';
 import 'services/match_repository.dart';
+import 'services/contact_repository.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -16,10 +17,14 @@ class PadelProgressApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ChangeNotifierProvider makes the one MatchRepository available to every
-    // screen below it. `..load()` kicks off reading saved matches from disk.
-    return ChangeNotifierProvider(
-      create: (_) => MatchRepository()..load(),
+    // We now have TWO repositories to share with the app, so we swap the single
+    // ChangeNotifierProvider for a MultiProvider that holds both. Every screen
+    // below can read/watch either one, exactly as before.
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => MatchRepository()..load()),
+        ChangeNotifierProvider(create: (_) => ContactRepository()..load()),
+      ],
       child: MaterialApp(
         title: 'Padel Progress',
         debugShowCheckedModeBanner: false,

@@ -1,9 +1,9 @@
 // lib/screens/scoreboard_screen.dart
 //
-// v1 match logger with tournament scoring rules.
-// Enter the games in each set, the date, optional notes, save.
-// On save we ask PadelScoring.validateMatch(...) whether it's a legal
-// best-of-3 before storing anything — the rules live in that file, not here.
+// v1 match logger with tournament scoring rules + players.
+// Enter partner/opponents, the games in each set, the date, optional notes.
+// On save we validate the score, then turn each typed name into a Contact id
+// (reusing an existing contact when the name matches) and store the ids.
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +12,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/models.dart';
 import '../services/match_repository.dart';
+import '../services/contact_repository.dart';
 import '../services/padel_scoring.dart';
 import '../theme.dart';
 
@@ -30,9 +31,17 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
   DateTime _date = DateTime.now();
   final _notes = TextEditingController();
 
+  // One controller per player name field.
+  final _partner = TextEditingController();
+  final _opp1 = TextEditingController();
+  final _opp2 = TextEditingController();
+
   @override
   void dispose() {
     _notes.dispose();
+    _partner.dispose();
+    _opp1.dispose();
+    _opp2.dispose();
     super.dispose();
   }
 
@@ -62,12 +71,12 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  void _save() {
+  Future<void> _save() async {
     final sets = _sets
         .map((s) => PadelSet(yourGames: s[0], theirGames: s[1]))
         .toList();
 
-    // Ask the rulebook. null == valid; otherwise it hands back the reason.
+    // 1) Validate the score first. null == valid.
     final error = PadelScoring.validateMatch(sets);
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -76,18 +85,49 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
       return; // stop — nothing is saved
     }
 
+    // Grab the repositories BEFORE any await, so we never use `context`
+    // across an async gap (that's the rule the mounted-guard below backs up).
+    final contactRepo = context.read<ContactRepository>();
+    final matchRepo = context.read<MatchRepository>();
+
+    // 2) Turn each typed name into a Contact id (reuse or create).
+    final partnerId = await _resolveName(contactRepo, _partner.text);
+    final opp1Id = await _resolveName(contactRepo, _opp1.text);
+    final opp2Id = await _resolveName(contactRepo, _opp2.text);
+
+    // 3) Save the match with the linked player ids.
     final match = Match(
       id: const Uuid().v4(),
       date: _date,
       sets: sets,
+      partnerId: partnerId,
+      opponent1Id: opp1Id,
+      opponent2Id: opp2Id,
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
     );
-    context.read<MatchRepository>().addMatch(match);
+    await matchRepo.addMatch(match);
+
+    // We awaited above, so this widget could be gone — check before using it.
+    if (!mounted) return;
     Navigator.of(context).pop();
+  }
+
+  /// Empty name -> null. Otherwise find-or-create the contact and return its id.
+  Future<String?> _resolveName(ContactRepository repo, String name) async {
+    if (name.trim().isEmpty) return null;
+    final contact = await repo.findOrCreate(name);
+    return contact.id;
   }
 
   @override
   Widget build(BuildContext context) {
+    // Existing contacts, so the fields can suggest names you've used before.
+    final known = context
+        .watch<ContactRepository>()
+        .contacts
+        .map((c) => c.name)
+        .toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text('Log a match')),
       body: ListView(
@@ -118,6 +158,31 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
           ),
           const Divider(height: 24),
 
+          // --- Players ---
+          Text('Players', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          _PlayerField(
+            label: 'Your partner',
+            controller: _partner,
+            suggestions: known,
+          ),
+          const SizedBox(height: 10),
+          _PlayerField(
+            label: 'Opponent 1',
+            controller: _opp1,
+            suggestions: known,
+          ),
+          const SizedBox(height: 10),
+          _PlayerField(
+            label: 'Opponent 2',
+            controller: _opp2,
+            suggestions: known,
+          ),
+
+          const SizedBox(height: 20),
+          Text('Score', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+
           for (int i = 0; i < _sets.length; i++) ...[
             _SetRow(
               index: i,
@@ -130,7 +195,6 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
             const SizedBox(height: 12),
           ],
 
-          // Only offer "add set" while there's room (best of 3).
           if (_sets.length < 3)
             TextButton.icon(
               onPressed: _addSet,
@@ -179,6 +243,57 @@ class _ScoreboardScreenState extends State<ScoreboardScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// A labeled name field that suggests contacts you've already used.
+// Built on Flutter's Autocomplete: you can pick a suggestion or just type
+// a new name — either way the text ends up in `controller`.
+class _PlayerField extends StatelessWidget {
+  const _PlayerField({
+    required this.label,
+    required this.controller,
+    required this.suggestions,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final List<String> suggestions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Autocomplete<String>(
+      // Which known names match what's been typed so far.
+      optionsBuilder: (value) {
+        if (value.text.isEmpty) return const Iterable<String>.empty();
+        final q = value.text.toLowerCase();
+        return suggestions.where((n) => n.toLowerCase().contains(q));
+      },
+      // Keep our own controller in sync with what the user types/picks.
+      fieldViewBuilder: (context, textController, focusNode, onSubmit) {
+        // Mirror edits back into the controller _save reads.
+        textController.text = controller.text;
+        textController.addListener(() => controller.text = textController.text);
+        return TextField(
+          controller: textController,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: label,
+            filled: true,
+            fillColor: AppColors.card,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE3E8E6)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE3E8E6)),
+            ),
+          ),
+        );
+      },
+      onSelected: (selection) => controller.text = selection,
     );
   }
 }

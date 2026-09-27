@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../services/match_repository.dart';
 import '../theme.dart';
+import '../services/contact_repository.dart';
 
 class MatchDetailScreen extends StatelessWidget {
   const MatchDetailScreen({super.key, required this.match});
@@ -15,6 +16,10 @@ class MatchDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final contacts = context.watch<ContactRepository>();
+    final partner = contacts.byId(match.partnerId)?.name;
+    final opp1 = contacts.byId(match.opponent1Id)?.name;
+    final opp2 = contacts.byId(match.opponent2Id)?.name;
     // Result -> a word + a colour (same idea as _ResultBadge on the home list).
     final (label, color) = switch (match.didWin) {
       true => ('Win', AppColors.win),
@@ -36,7 +41,13 @@ class MatchDetailScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // --- Result header ---
+          if (partner != null || opp1 != null || opp2 != null) ...[
+            Text('Players', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            if (partner != null) Text('with $partner'),
+            if (opp1 != null || opp2 != null) Text('vs $opp1 & $opp2'),
+            const SizedBox(height: 24),
+          ],
           Text(
             label,
             style: TextStyle(
