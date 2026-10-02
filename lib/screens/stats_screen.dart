@@ -1,8 +1,7 @@
 // lib/screens/stats_screen.dart
 //
-// Stats v1: shows the basic numbers the MatchRepository already computes.
-// It only DISPLAYS data (nothing changes inside it while you look), so it's a
-// StatelessWidget — and because the numbers can change, we `watch` the repo.
+// The "Stats" tab body: the basic numbers from MatchRepository, or an empty
+// state. The surrounding Scaffold/AppBar live in MainScaffold.
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,43 +9,36 @@ import 'package:provider/provider.dart';
 import '../services/match_repository.dart';
 import '../theme.dart';
 
-class StatsScreen extends StatelessWidget {
-  const StatsScreen({super.key});
+class StatsBody extends StatelessWidget {
+  const StatsBody({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // watch() -> this screen rebuilds if matches change (e.g. you add one).
     final repo = context.watch<MatchRepository>();
     final winRate = (repo.winRate * 100).round();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Stats')),
-      // If there are no matches yet, invite the user to act instead of showing
-      // empty cards.
-      body: repo.totalMatches == 0
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'No matches yet.\nLog a match to see your stats.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.inkSoft, height: 1.4),
-                ),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _StatCard(label: 'Win rate', value: '$winRate%'),
-                const SizedBox(height: 12),
-                _StatCard(
-                  label: 'Matches played',
-                  value: '${repo.totalMatches}',
-                ),
-                const SizedBox(height: 12),
-                _StatCard(label: 'Wins', value: '${repo.wins}'),
-              ],
-            ),
+    if (repo.totalMatches == 0) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text(
+            'No matches yet.\nLog a match to see your stats.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.inkSoft, height: 1.4),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _StatCard(label: 'Win rate', value: '$winRate%'),
+        const SizedBox(height: 12),
+        _StatCard(label: 'Matches played', value: '${repo.totalMatches}'),
+        const SizedBox(height: 12),
+        _StatCard(label: 'Wins', value: '${repo.wins}'),
+      ],
     );
   }
 }

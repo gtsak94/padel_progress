@@ -1,4 +1,7 @@
 // lib/screens/home_screen.dart
+//
+// The "Matches" tab body: a stats header + the recent matches list, or an
+// empty state. The surrounding Scaffold/AppBar/FAB live in MainScaffold.
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,51 +10,30 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../services/match_repository.dart';
 import '../theme.dart';
-import 'scoreboard_screen.dart';
 import 'match_detail_screen.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class MatchesBody extends StatelessWidget {
+  const MatchesBody({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // watch() rebuilds this screen whenever the repository calls
-    // notifyListeners() — e.g. after a match is added.
     final repo = context.watch<MatchRepository>();
     final matches = repo.matches;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Padel Progress',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const ScoreboardScreen())),
-        icon: const Icon(Icons.add),
-        label: const Text('Log a match'),
-      ),
-      body: matches.isEmpty
-          ? const _EmptyState()
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-              children: [
-                _StatsHeader(repo: repo),
-                const SizedBox(height: 24),
-                Text(
-                  'Recent matches',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 12),
-                for (final m in matches) ...[
-                  _MatchTile(match: m),
-                  const SizedBox(height: 10),
-                ],
-              ],
-            ),
+    if (matches.isEmpty) return const _MatchesEmptyState();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      children: [
+        _StatsHeader(repo: repo),
+        const SizedBox(height: 24),
+        Text('Recent matches', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        for (final m in matches) ...[
+          _MatchTile(match: m),
+          const SizedBox(height: 10),
+        ],
+      ],
     );
   }
 }
@@ -121,19 +103,12 @@ class _MatchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      // ← NEW: wrapper
       onTap: () {
-        // ← NEW: what happens on tap
         Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => MatchDetailScreen(
-              match: match,
-            ), // hand this tile's match to the new screen
-          ),
+          MaterialPageRoute(builder: (_) => MatchDetailScreen(match: match)),
         );
-      }, // ← NEW: end of onTap
+      },
       child: Container(
-        // ← your original Container, now the InkWell's child
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.card,
@@ -166,8 +141,8 @@ class _MatchTile extends StatelessWidget {
             ),
           ],
         ),
-      ), // ← end of Container (the child)
-    ); // ← end of InkWell
+      ),
+    );
   }
 }
 
@@ -202,12 +177,11 @@ class _ResultBadge extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+class _MatchesEmptyState extends StatelessWidget {
+  const _MatchesEmptyState();
 
   @override
   Widget build(BuildContext context) {
-    // An empty screen is an invitation to act, not a dead end.
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -227,7 +201,7 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 8),
             const Text(
               'Tap “Log a match” to record your first one. '
-              'Your stats and focus areas build from here.',
+              'Your stats build from here.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.inkSoft, height: 1.4),
             ),
